@@ -25,6 +25,7 @@ type Extension interface {
 	UpdateAvailable() bool
 	IsBinary() bool
 	IsLocal() bool
+	Owner() string
 }
 
 //go:generate moq -rm -out manager_mock.go . ExtensionManager
@@ -37,4 +38,5 @@ type ExtensionManager interface {
 	Dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
 	Create(name string, tmplType ExtTemplateType) error
 	EnableDryRunMode()
+	UpdateDir(name string) string
 }
