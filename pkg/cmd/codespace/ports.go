@@ -66,6 +66,7 @@ func (a *App) ListPorts(ctx context.Context, selector *CodespaceSelector, export
 	if err != nil {
 		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}
+	defer safeClose(fwd, &err)
 
 	var ports []*tunnels.TunnelPort
 	err = a.RunWithProgress("Fetching ports", func() (err error) {
@@ -107,15 +108,7 @@ func (a *App) ListPorts(ctx context.Context, selector *CodespaceSelector, export
 	}
 
 	cs := a.io.ColorScheme()
-	tp := tableprinter.New(a.io)
-
-	if a.io.IsStdoutTTY() {
-		tp.AddField("LABEL")
-		tp.AddField("PORT")
-		tp.AddField("VISIBILITY")
-		tp.AddField("BROWSE URL")
-		tp.EndRow()
-	}
+	tp := tableprinter.New(a.io, tableprinter.WithHeader("LABEL", "PORT", "VISIBILITY", "BROWSE URL"))
 
 	for _, port := range portInfos {
 		// Convert the ACE to a friendly visibility string (private, org, public)
@@ -254,6 +247,7 @@ func (a *App) UpdatePortVisibility(ctx context.Context, selector *CodespaceSelec
 	if err != nil {
 		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}
+	defer safeClose(fwd, &err)
 
 	// TODO: check if port visibility can be updated in parallel instead of sequentially
 	for _, port := range ports {
@@ -345,7 +339,12 @@ func (a *App) ForwardPorts(ctx context.Context, selector *CodespaceSelector, por
 			if err != nil {
 				return fmt.Errorf("failed to create port forwarder: %w", err)
 			}
-			return fwd.ForwardAndConnectToPort(ctx, uint16(pair.remote), listen, false, false)
+			defer safeClose(fwd, &err)
+
+			opts := portforwarder.ForwardPortOpts{
+				Port: pair.remote,
+			}
+			return fwd.ForwardPortToListener(ctx, opts, listen)
 		})
 	}
 	return group.Wait() // first error

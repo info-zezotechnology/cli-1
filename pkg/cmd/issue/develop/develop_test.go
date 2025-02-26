@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/cli/cli/v2/context"
 	"github.com/cli/cli/v2/git"
 	"github.com/cli/cli/v2/internal/ghrepo"
@@ -245,7 +246,14 @@ func TestDevelopRun(t *testing.T) {
 						assert.Equal(t, "REPO", inputs["name"])
 					}))
 			},
-			expectedOut: "\nShowing linked branches for OWNER/REPO#42\n\nfoo  https://github.com/OWNER/REPO/tree/foo\nbar  https://github.com/OWNER/OTHER-REPO/tree/bar\n",
+			expectedOut: heredoc.Doc(`
+
+				Showing linked branches for OWNER/REPO#42
+
+				BRANCH  URL
+				foo     https://github.com/OWNER/REPO/tree/foo
+				bar     https://github.com/OWNER/OTHER-REPO/tree/bar
+			`),
 		},
 		{
 			name: "list branches for an issue providing an issue url",
@@ -311,7 +319,7 @@ func TestDevelopRun(t *testing.T) {
 			expectedOut: "github.com/OWNER/REPO/tree/my-issue-1\n",
 		},
 		{
-			name: "develop new branch in diffferent repo than issue",
+			name: "develop new branch in different repo than issue",
 			opts: &DevelopOptions{
 				IssueSelector: "123",
 				BranchRepo:    "OWNER2/REPO",
@@ -391,6 +399,7 @@ func TestDevelopRun(t *testing.T) {
 			},
 			runStubs: func(cs *run.CommandStubber) {
 				cs.Register(`git fetch origin \+refs/heads/my-branch:refs/remotes/origin/my-branch`, 0, "")
+				cs.Register(`git config branch\.my-branch\.gh-merge-base main`, 0, "")
 			},
 			expectedOut: "github.com/OWNER/REPO/tree/my-branch\n",
 		},
@@ -506,6 +515,31 @@ func TestDevelopRun(t *testing.T) {
 				cs.Register(`git checkout -b my-branch --track origin/my-branch`, 0, "")
 			},
 			expectedOut: "github.com/OWNER/REPO/tree/my-branch\n",
+		},
+		{
+			name: "develop with base branch which does not exist",
+			opts: &DevelopOptions{
+				IssueSelector: "123",
+				BaseBranch:    "does-not-exist-branch",
+			},
+			remotes: map[string]string{
+				"origin": "OWNER/REPO",
+			},
+			httpStubs: func(reg *httpmock.Registry, t *testing.T) {
+				reg.Register(
+					httpmock.GraphQL(`query LinkedBranchFeature\b`),
+					httpmock.StringResponse(featureEnabledPayload),
+				)
+				reg.Register(
+					httpmock.GraphQL(`query IssueByNumber\b`),
+					httpmock.StringResponse(`{"data":{"repository":{"hasIssuesEnabled":true,"issue":{"id": "SOMEID","number":123,"title":"my issue"}}}}`),
+				)
+				reg.Register(
+					httpmock.GraphQL(`query FindRepoBranchID\b`),
+					httpmock.StringResponse(`{"data":{"repository":{"id":"REPOID","defaultBranchRef":{"target":{"oid":"DEFAULTOID"}},"ref":null}}}`),
+				)
+			},
+			wantErr: "could not find branch \"does-not-exist-branch\" in OWNER/REPO",
 		},
 	}
 	for _, tt := range tests {
